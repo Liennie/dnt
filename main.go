@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
+	"reflect"
+	"strconv"
 	"time"
 
 	swagger "github.com/gdg-garage/dungeons-and-trolls-go-client"
-
-	"github.com/liennie/gdt/internal/yell"
+	"golang.org/x/exp/slices"
 )
 
 func main() {
@@ -48,12 +48,7 @@ func main() {
 		// fmt.Println("Response:", resp)
 		fmt.Println("Next tick ...")
 		command := run(gameResp)
-		if command.Yell == nil || command.Yell.Text == "" {
-			command.Yell = &swagger.DungeonsandtrollsMessage{
-				Text: yell.Next(),
-			}
-		}
-		fmt.Printf("Command: %+v\n", command)
+		logStruct(reflect.ValueOf(command), "Command")
 
 		_, httpResp, err = client.DungeonsAndTrollsApi.DungeonsAndTrollsCommands(ctx, *command, nil)
 		if err != nil {
@@ -71,25 +66,57 @@ func main() {
 }
 
 func respawn(ctx context.Context, client *swagger.APIClient) {
-	dummyPayload := ctx
 	log.Println("Respawning ...")
-	_, httpResp, err := client.DungeonsAndTrollsApi.DungeonsAndTrollsRespawn(ctx, dummyPayload, nil)
+	_, httpResp, err := client.DungeonsAndTrollsApi.DungeonsAndTrollsRespawn(ctx, struct{}{}, nil)
 	if err != nil {
 		log.Printf("HTTP Response: %+v\n", httpResp)
 		log.Print(err)
 	}
 }
 
+func logStruct(v reflect.Value, name string) {
+	if v.Type().Kind() == reflect.Pointer {
+		if !v.IsNil() {
+			logStruct(v.Elem(), name)
+		}
+		return
+	}
+
+	if v.Type().Kind() == reflect.Struct {
+		for n := 0; n < v.Type().NumField(); n++ {
+			field := v.Field(n)
+			fieldName := name + "." + v.Type().Field(n).Name
+			logStruct(field, fieldName)
+		}
+		return
+	}
+
+	if v.Type().Kind() == reflect.Slice {
+		for n := 0; n < v.Len(); n++ {
+			field := v.Index(n)
+			fieldName := name + "[" + strconv.Itoa(n) + "]"
+			logStruct(field, fieldName)
+		}
+		return
+	}
+
+	log.Printf("%s: %v", name, v.Interface())
+	return
+}
+
 func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCommandsBatch {
 	log.Println("Score:", state.Score)
-	log.Println("Character.Money:", state.Character.Money)
+	logStruct(reflect.ValueOf(state.Character.Attributes), "Character.Attributes")
+	log.Println()
 	log.Println("CurrentLevel:", state.CurrentLevel)
 	log.Println("CurrentPosition.PositionX:", state.CurrentPosition.PositionX)
 	log.Println("CurrentPosition.PositionY:", state.CurrentPosition.PositionY)
 
+	cmd := &swagger.DungeonsandtrollsCommandsBatch{}
+
 	if state.Character.SkillPoints > 0 {
 		log.Println("Spending attribute points ...")
-		return spendAttributePoints(&state)
+		cmd.AssignSkillPoints = spendAttributePoints(&state)
 	}
 
 	var mainHandItem *swagger.DungeonsandtrollsItem
@@ -100,16 +127,24 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		}
 	}
 
-	if mainHandItem == nil {
+	if mainHandItem == nil && state.Character.Coordinates.Level == 0 {
 		log.Println("Looking for items to buy ...")
-		item := shop(&state)
-		if item != nil {
-			return &swagger.DungeonsandtrollsCommandsBatch{
-				Buy: &swagger.DungeonsandtrollsIdentifiers{Ids: []string{item.Id}},
+		items := shop(&state)
+		if len(items) > 0 {
+			itemIds := make([]string, len(items))
+			for i := range items {
+				itemIds[i] = items[i].Id
 			}
+
+			return &swagger.DungeonsandtrollsCommandsBatch{
+				Buy: &swagger.DungeonsandtrollsIdentifiers{Ids: itemIds},
+			}
+		} else {
+			log.Println("ERROR: Found no item to buy!")
 		}
-		log.Println("ERROR: Found no item to buy!")
 	}
+
+	stairsCoords := findStairs(&state)
 
 	if mainHandItem != nil {
 		log.Println("I like this weapon:", mainHandItem.Name)
@@ -117,45 +152,59 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		monster := findMonster(&state)
 
 		if monster != nil {
-			log.Println("Let's fight!")
-			if *monster.Position == *state.CurrentPosition && len(state.Character.Equip) > 0 {
-				log.Println("Attacking ...")
-				skill := state.Character.Equip[0].Skills[0]
-				log.Println("Picked skill:", skill.Name, "with target type:", *skill.Target)
-				damage := calculateAttributesValue(*state.Character.Attributes, *skill.DamageAmount)
-				log.Println("Estimated damage ignoring resistances:", damage)
-
-				if *skill.Target == swagger.POSITION_SkillTarget {
-					return &swagger.DungeonsandtrollsCommandsBatch{
-						Skill: &swagger.DungeonsandtrollsSkillUse{
-							SkillId:  state.Character.Equip[0].Skills[0].Id,
-							Position: monster.Position,
-						},
+			var skill *swagger.DungeonsandtrollsSkill
+			for _, equip := range state.Character.Equip {
+				for _, equipSkill := range equip.Skills {
+					if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) && *equipSkill.Target == swagger.CHARACTER_SkillTarget {
+						skill = &equipSkill
+						break
 					}
-				}
-				if *skill.Target == swagger.CHARACTER_SkillTarget {
-					return &swagger.DungeonsandtrollsCommandsBatch{
-						Skill: &swagger.DungeonsandtrollsSkillUse{
-							SkillId:  state.Character.Equip[0].Skills[0].Id,
-							TargetId: monster.Monsters[0].Id,
-						},
-					}
-				}
-				return &swagger.DungeonsandtrollsCommandsBatch{
-					Skill: &swagger.DungeonsandtrollsSkillUse{
-						SkillId: state.Character.Equip[0].Skills[0].Id,
-					},
 				}
 			}
 
-			return &swagger.DungeonsandtrollsCommandsBatch{
-				Move: monster.Position,
+			if skill != nil {
+				log.Println("Let's fight!")
+				if *monster.Position == *state.CurrentPosition {
+					log.Println("Attacking ...")
+					log.Println("Picked skill:", skill.Name, "with target type:", *skill.Target)
+					damage := calculateAttributesValue(state.Character.Attributes, skill.DamageAmount)
+					log.Println("Estimated damage ignoring resistances:", damage)
+
+					if *skill.Target == swagger.POSITION_SkillTarget {
+						return &swagger.DungeonsandtrollsCommandsBatch{
+							Skill: &swagger.DungeonsandtrollsSkillUse{
+								SkillId:  skill.Id,
+								Position: monster.Position,
+							},
+						}
+					}
+					if *skill.Target == swagger.CHARACTER_SkillTarget {
+						return &swagger.DungeonsandtrollsCommandsBatch{
+							Skill: &swagger.DungeonsandtrollsSkillUse{
+								SkillId:  skill.Id,
+								TargetId: monster.Monsters[0].Id,
+							},
+						}
+					}
+					return &swagger.DungeonsandtrollsCommandsBatch{
+						Skill: &swagger.DungeonsandtrollsSkillUse{
+							SkillId: skill.Id,
+						},
+					}
+				} else {
+					return &swagger.DungeonsandtrollsCommandsBatch{
+						Move: monster.Position,
+					}
+				}
+			} else {
+				log.Println("No skill. Moving towards stairs ...")
+				return &swagger.DungeonsandtrollsCommandsBatch{
+					Move: stairsCoords,
+				}
 			}
 		}
 	}
 	log.Println("No monsters. Let's find stairs ...")
-
-	stairsCoords := findStairs(&state)
 
 	if stairsCoords == nil {
 		log.Println("Can't find stairs")
@@ -166,43 +215,70 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		}
 	}
 
-	if state.CurrentLevel > 7 {
-		rand.Seed(time.Now().UnixNano())
-		randomYell := rand.Intn(2)
-		var yells []string = []string{
-			"I'm so scared!",
-			"Help me!",
-		}
-		return &swagger.DungeonsandtrollsCommandsBatch{
-			Yell: &swagger.DungeonsandtrollsMessage{
-				Text: yells[randomYell],
-			},
-		}
-	}
-
 	log.Println("Moving towards stairs ...")
 	return &swagger.DungeonsandtrollsCommandsBatch{
 		Move: stairsCoords,
 	}
 }
 
-func spendAttributePoints(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCommandsBatch {
-	return &swagger.DungeonsandtrollsCommandsBatch{
-		AssignSkillPoints: &swagger.DungeonsandtrollsAttributes{
-			Stamina: state.Character.SkillPoints,
-		},
+func spendAttributePoints(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsAttributes {
+	return &swagger.DungeonsandtrollsAttributes{
+		Strength:       state.Character.SkillPoints / 13,
+		Dexterity:      state.Character.SkillPoints / 13,
+		Intelligence:   state.Character.SkillPoints / 13,
+		Willpower:      state.Character.SkillPoints / 13,
+		Constitution:   state.Character.SkillPoints / 13,
+		SlashResist:    state.Character.SkillPoints / 13,
+		PierceResist:   state.Character.SkillPoints / 13,
+		FireResist:     state.Character.SkillPoints / 13,
+		PoisonResist:   state.Character.SkillPoints / 13,
+		ElectricResist: state.Character.SkillPoints / 13,
+		Life:           state.Character.SkillPoints / 13,
+		Stamina:        state.Character.SkillPoints / 13,
+		Mana:           state.Character.SkillPoints / 13,
 	}
 }
 
-func shop(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsItem {
+func shop(state *swagger.DungeonsandtrollsGameState) []swagger.DungeonsandtrollsItem {
+	type shopItem struct {
+		Value float32
+		Item  swagger.DungeonsandtrollsItem
+	}
+	bestItems := []shopItem{}
+
 	shop := state.ShopItems
 	for _, item := range shop {
-		if item.Price <= state.Character.Money && *item.Slot == swagger.MAIN_HAND_DungeonsandtrollsItemType && item.Price == 0 {
-			log.Println("Chosen item:", item.Name)
-			return &item
+		if item.Price <= state.Character.Money && haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) {
+			bestItems = append(bestItems, shopItem{
+				Value: calculateAttributesValue(state.Character.Attributes, item.Attributes) / float32(item.Price),
+				Item:  item,
+			})
 		}
 	}
-	return nil
+
+	slices.SortFunc(bestItems, func(a, b shopItem) int {
+		if b.Value > a.Value {
+			return -1
+		}
+		if b.Value < a.Value {
+			return 1
+		}
+		return 0
+	})
+
+	res := []swagger.DungeonsandtrollsItem{}
+
+	money := state.Character.Money
+	slots := map[swagger.DungeonsandtrollsItemType]bool{}
+	for _, item := range bestItems {
+		if item.Item.Price <= money && !slots[*item.Item.Slot] {
+			res = append(res, item.Item)
+			slots[*item.Item.Slot] = true
+			money -= item.Item.Price
+		}
+	}
+
+	return res
 }
 
 func findMonster(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsMapObjects {
@@ -241,7 +317,7 @@ func findStairs(state *swagger.DungeonsandtrollsGameState) *swagger.Dungeonsandt
 	return nil
 }
 
-func calculateAttributesValue(myAttrs swagger.DungeonsandtrollsAttributes, attrs swagger.DungeonsandtrollsAttributes) int {
+func calculateAttributesValue(myAttrs *swagger.DungeonsandtrollsAttributes, attrs *swagger.DungeonsandtrollsAttributes) float32 {
 	var value float32
 	value += myAttrs.Strength * attrs.Strength
 	value += myAttrs.Dexterity * attrs.Dexterity
@@ -257,5 +333,21 @@ func calculateAttributesValue(myAttrs swagger.DungeonsandtrollsAttributes, attrs
 	value += myAttrs.Stamina * attrs.Stamina
 	value += myAttrs.Mana * attrs.Mana
 	value += attrs.Constant
-	return int(value)
+	return value
+}
+
+func haveRequiredAttirbutes(myAttrs *swagger.DungeonsandtrollsAttributes, requirements *swagger.DungeonsandtrollsAttributes) bool {
+	return myAttrs.Strength >= requirements.Strength &&
+		myAttrs.Dexterity >= requirements.Dexterity &&
+		myAttrs.Intelligence >= requirements.Intelligence &&
+		myAttrs.Willpower >= requirements.Willpower &&
+		myAttrs.Constitution >= requirements.Constitution &&
+		myAttrs.SlashResist >= requirements.SlashResist &&
+		myAttrs.PierceResist >= requirements.PierceResist &&
+		myAttrs.FireResist >= requirements.FireResist &&
+		myAttrs.PoisonResist >= requirements.PoisonResist &&
+		myAttrs.ElectricResist >= requirements.ElectricResist &&
+		myAttrs.Life >= requirements.Life &&
+		myAttrs.Stamina >= requirements.Stamina &&
+		myAttrs.Mana >= requirements.Mana
 }

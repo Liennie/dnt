@@ -7,3 +7,6 @@ main: $(targets) go.mod main.go
 
 run: main
 	./main 152a11c2-d972-4942-814c-e30e71b7c84f
+
+respawn: main
+	./main 152a11c2-d972-4942-814c-e30e71b7c84f respawn
