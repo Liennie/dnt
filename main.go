@@ -42,6 +42,7 @@ func main() {
 		if err != nil {
 			log.Printf("HTTP Response: %+v\n", httpResp)
 			log.Print(err)
+			time.Sleep(time.Second)
 			continue
 		}
 		// fmt.Println("Response:", resp)
@@ -63,6 +64,7 @@ func main() {
 				log.Printf("HTTP Response: %+v\n", httpResp)
 				log.Print(err)
 			}
+			time.Sleep(time.Second)
 			continue
 		}
 	}
