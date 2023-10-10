@@ -9,6 +9,8 @@ import (
 	"time"
 
 	swagger "github.com/gdg-garage/dungeons-and-trolls-go-client"
+
+	"github.com/liennie/gdt/internal/yell"
 )
 
 func main() {
@@ -21,7 +23,7 @@ func main() {
 	// Initialize the HTTP client and set the base URL for the API
 	cfg := swagger.NewConfiguration()
 	// TODO: use prod path
-	cfg.BasePath = "https://docker.tivvit.cz"
+	cfg.BasePath = "http://10.0.1.63"
 
 	// Set the X-API-key header value
 	ctx := context.WithValue(context.Background(), swagger.ContextAPIKey, swagger.APIKey{Key: apiKey})
@@ -39,11 +41,17 @@ func main() {
 		gameResp, httpResp, err := client.DungeonsAndTrollsApi.DungeonsAndTrollsGame(ctx, nil)
 		if err != nil {
 			log.Printf("HTTP Response: %+v\n", httpResp)
-			log.Fatal(err)
+			log.Print(err)
+			continue
 		}
 		// fmt.Println("Response:", resp)
 		fmt.Println("Next tick ...")
 		command := run(gameResp)
+		if command.Yell == nil || command.Yell.Text == "" {
+			command.Yell = &swagger.DungeonsandtrollsMessage{
+				Text: yell.Next(),
+			}
+		}
 		fmt.Printf("Command: %+v\n", command)
 
 		_, httpResp, err = client.DungeonsAndTrollsApi.DungeonsAndTrollsCommands(ctx, *command, nil)
@@ -53,8 +61,9 @@ func main() {
 				log.Printf("Server error response: %s\n", swaggerErr.Body())
 			} else {
 				log.Printf("HTTP Response: %+v\n", httpResp)
-				log.Fatal(err)
+				log.Print(err)
 			}
+			continue
 		}
 	}
 }
@@ -65,7 +74,7 @@ func respawn(ctx context.Context, client *swagger.APIClient) {
 	_, httpResp, err := client.DungeonsAndTrollsApi.DungeonsAndTrollsRespawn(ctx, dummyPayload, nil)
 	if err != nil {
 		log.Printf("HTTP Response: %+v\n", httpResp)
-		log.Fatal(err)
+		log.Print(err)
 	}
 }
 

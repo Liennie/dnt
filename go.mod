@@ -1,4 +1,4 @@
-module github.com/gdg-garage/dungeons-and-trolls-go-bot
+module github.com/liennie/gdt
 
 go 1.19
 
