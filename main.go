@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"reflect"
 	"strconv"
@@ -106,17 +107,19 @@ func logStruct(v reflect.Value, name string) {
 
 func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCommandsBatch {
 	log.Println("Score:", state.Score)
+	// logStruct(reflect.ValueOf(state.Character.Equip), "Character.Equip")
+	log.Println()
 	logStruct(reflect.ValueOf(state.Character.Attributes), "Character.Attributes")
 	log.Println()
 	log.Println("CurrentLevel:", state.CurrentLevel)
 	log.Println("CurrentPosition.PositionX:", state.CurrentPosition.PositionX)
 	log.Println("CurrentPosition.PositionY:", state.CurrentPosition.PositionY)
 
-	cmd := &swagger.DungeonsandtrollsCommandsBatch{}
-
-	if state.Character.SkillPoints > 0 {
+	if state.Character.SkillPoints > 1.5 {
 		log.Println("Spending attribute points ...")
-		cmd.AssignSkillPoints = spendAttributePoints(&state)
+		return &swagger.DungeonsandtrollsCommandsBatch{
+			AssignSkillPoints: spendAttributePoints(&state),
+		}
 	}
 
 	var mainHandItem *swagger.DungeonsandtrollsItem
@@ -146,64 +149,122 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 
 	stairsCoords := findStairs(&state)
 
-	if mainHandItem != nil {
-		log.Println("I like this weapon:", mainHandItem.Name)
+	var skill *swagger.DungeonsandtrollsSkill
 
-		monster := findMonster(&state)
+	if state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 {
+		for _, equip := range state.Character.Equip {
+			for _, equipSkill := range equip.Skills {
+				equipSkill := equipSkill
 
-		if monster != nil {
-			var skill *swagger.DungeonsandtrollsSkill
-			for _, equip := range state.Character.Equip {
-				for _, equipSkill := range equip.Skills {
-					if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) && *equipSkill.Target == swagger.CHARACTER_SkillTarget {
-						skill = &equipSkill
-						break
-					}
-				}
-			}
+				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
+					equipSkill.CasterEffects != nil &&
+					equipSkill.CasterEffects.Attributes != nil &&
+					equipSkill.CasterEffects.Attributes.Stamina != nil &&
+					calculateAttributesValue(state.Character.Attributes, equipSkill.CasterEffects.Attributes.Stamina) > 0 {
 
-			if skill != nil {
-				log.Println("Let's fight!")
-				if *monster.Position == *state.CurrentPosition {
-					log.Println("Attacking ...")
-					log.Println("Picked skill:", skill.Name, "with target type:", *skill.Target)
-					damage := calculateAttributesValue(state.Character.Attributes, skill.DamageAmount)
-					log.Println("Estimated damage ignoring resistances:", damage)
-
-					if *skill.Target == swagger.POSITION_SkillTarget {
-						return &swagger.DungeonsandtrollsCommandsBatch{
-							Skill: &swagger.DungeonsandtrollsSkillUse{
-								SkillId:  skill.Id,
-								Position: monster.Position,
-							},
-						}
-					}
-					if *skill.Target == swagger.CHARACTER_SkillTarget {
-						return &swagger.DungeonsandtrollsCommandsBatch{
-							Skill: &swagger.DungeonsandtrollsSkillUse{
-								SkillId:  skill.Id,
-								TargetId: monster.Monsters[0].Id,
-							},
-						}
-					}
-					return &swagger.DungeonsandtrollsCommandsBatch{
-						Skill: &swagger.DungeonsandtrollsSkillUse{
-							SkillId: skill.Id,
-						},
-					}
-				} else {
-					return &swagger.DungeonsandtrollsCommandsBatch{
-						Move: monster.Position,
-					}
-				}
-			} else {
-				log.Println("No skill. Moving towards stairs ...")
-				return &swagger.DungeonsandtrollsCommandsBatch{
-					Move: stairsCoords,
+					skill = &equipSkill
+					break
 				}
 			}
 		}
+		if skill != nil {
+			log.Println("Resting")
+			return &swagger.DungeonsandtrollsCommandsBatch{
+				Skill: &swagger.DungeonsandtrollsSkillUse{
+					SkillId: skill.Id,
+				},
+			}
+		}
 	}
+
+	if state.Character.Attributes.Life < 100 && state.Character.LastDamageTaken > 2 {
+		for _, equip := range state.Character.Equip {
+			for _, equipSkill := range equip.Skills {
+				equipSkill := equipSkill
+
+				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
+					equipSkill.CasterEffects != nil &&
+					equipSkill.CasterEffects.Attributes != nil &&
+					equipSkill.CasterEffects.Attributes.Life != nil &&
+					calculateAttributesValue(state.Character.Attributes, equipSkill.CasterEffects.Attributes.Life) > 0 {
+
+					skill = &equipSkill
+					break
+				}
+			}
+		}
+		if skill != nil {
+			log.Println("Resting")
+			return &swagger.DungeonsandtrollsCommandsBatch{
+				Skill: &swagger.DungeonsandtrollsSkillUse{
+					SkillId: skill.Id,
+				},
+			}
+		}
+	}
+
+	monster := findMonster(&state)
+
+	if monster != nil {
+		maxDamage := float32(0)
+		for _, equip := range state.Character.Equip {
+			for _, equipSkill := range equip.Skills {
+				equipSkill := equipSkill
+
+				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
+					*equipSkill.Target == swagger.CHARACTER_SkillTarget &&
+					equipSkill.DamageAmount != nil &&
+					calculateAttributesValue(state.Character.Attributes, equipSkill.DamageAmount) > maxDamage {
+
+					skill = &equipSkill
+					maxDamage = calculateAttributesValue(state.Character.Attributes, equipSkill.DamageAmount)
+				}
+			}
+		}
+
+		if skill != nil {
+			log.Println("Let's fight!")
+			dist := distance(*state.CurrentPosition, *monster.Position)
+			if dist <= int(calculateAttributesValue(state.Character.Attributes, skill.Range_)) {
+				log.Println("Attacking ...")
+				log.Println("Picked skill:", skill.Name, "with target type:", *skill.Target)
+				damage := calculateAttributesValue(state.Character.Attributes, skill.DamageAmount)
+				log.Println("Estimated damage ignoring resistances:", damage)
+
+				if *skill.Target == swagger.POSITION_SkillTarget {
+					return &swagger.DungeonsandtrollsCommandsBatch{
+						Skill: &swagger.DungeonsandtrollsSkillUse{
+							SkillId:  skill.Id,
+							Position: monster.Position,
+						},
+					}
+				}
+				if *skill.Target == swagger.CHARACTER_SkillTarget {
+					return &swagger.DungeonsandtrollsCommandsBatch{
+						Skill: &swagger.DungeonsandtrollsSkillUse{
+							SkillId:  skill.Id,
+							TargetId: monster.Monsters[0].Id,
+						},
+					}
+				}
+				return &swagger.DungeonsandtrollsCommandsBatch{
+					Skill: &swagger.DungeonsandtrollsSkillUse{
+						SkillId: skill.Id,
+					},
+				}
+			} else {
+				return &swagger.DungeonsandtrollsCommandsBatch{
+					Move: monster.Position,
+				}
+			}
+		} else {
+			log.Println("No skill. Moving towards stairs ...")
+			return &swagger.DungeonsandtrollsCommandsBatch{
+				Move: stairsCoords,
+			}
+		}
+	}
+
 	log.Println("No monsters. Let's find stairs ...")
 
 	if stairsCoords == nil {
@@ -222,6 +283,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 }
 
 func spendAttributePoints(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsAttributes {
+	state.Character.SkillPoints--
 	return &swagger.DungeonsandtrollsAttributes{
 		Strength:       state.Character.SkillPoints / 13,
 		Dexterity:      state.Character.SkillPoints / 13,
@@ -287,13 +349,21 @@ func findMonster(state *swagger.DungeonsandtrollsGameState) *swagger.Dungeonsand
 		if map_.Level != level {
 			continue
 		}
+		closestDist := math.MaxInt
+		var closest *swagger.DungeonsandtrollsMapObjects
 		for i := range map_.Objects {
 			object := map_.Objects[i]
 			if len(object.Monsters) > 0 {
-				log.Printf("Found monster on position: %+v\n", object.Position)
-				return &object
+				for _, monster := range object.Monsters {
+					if distance(*state.CurrentPosition, *object.Position) < closestDist && monster.Name != "Chest" {
+						log.Printf("Found monster on position: %+v\n", object.Position)
+						closestDist = distance(*state.CurrentPosition, *object.Position)
+						closest = &object
+					}
+				}
 			}
 		}
+		return closest
 	}
 	return nil
 }
@@ -306,6 +376,19 @@ func findStairs(state *swagger.DungeonsandtrollsGameState) *swagger.Dungeonsandt
 			continue
 		}
 		log.Println("Found current level ...")
+		maxPortal := 0
+		var portalPos swagger.DungeonsandtrollsPosition
+		for i := range map_.Objects {
+			object := map_.Objects[i]
+			if object.Portal != nil && object.Portal.DestinationFloor > int32(maxPortal) {
+				maxPortal = int(object.Portal.DestinationFloor)
+				portalPos = *object.Position
+			}
+		}
+		if maxPortal > 0 {
+			log.Printf("Found portal on position: %+v\n", portalPos)
+			return &portalPos
+		}
 		for i := range map_.Objects {
 			object := map_.Objects[i]
 			if object.IsStairs {
@@ -350,4 +433,15 @@ func haveRequiredAttirbutes(myAttrs *swagger.DungeonsandtrollsAttributes, requir
 		myAttrs.Life >= requirements.Life &&
 		myAttrs.Stamina >= requirements.Stamina &&
 		myAttrs.Mana >= requirements.Mana
+}
+
+func abs(i int) int {
+	if i < 0 {
+		return -i
+	}
+	return i
+}
+
+func distance(a, b swagger.DungeonsandtrollsPosition) int {
+	return abs(int(a.PositionX)-int(b.PositionX)) + abs(int(a.PositionY)-int(b.PositionY))
 }
