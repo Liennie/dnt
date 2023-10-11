@@ -285,10 +285,10 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 func spendAttributePoints(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsAttributes {
 	state.Character.SkillPoints -= 0.1
 	return &swagger.DungeonsandtrollsAttributes{
-		Strength:     state.Character.SkillPoints / 7,
-		Dexterity:    state.Character.SkillPoints / 7,
-		Intelligence: state.Character.SkillPoints / 7,
-		Willpower:    state.Character.SkillPoints / 7,
+		Strength:  state.Character.SkillPoints / 7,
+		Dexterity: state.Character.SkillPoints / 7,
+		// Intelligence: state.Character.SkillPoints / 7,
+		// Willpower:    state.Character.SkillPoints / 7,
 		Constitution: state.Character.SkillPoints / 7,
 		SlashResist:  state.Character.SkillPoints / 7,
 		PierceResist: state.Character.SkillPoints / 7,
@@ -307,8 +307,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		STAMINA = "stamina"
 		LIFE    = "life"
 		OTHER   = "other"
-		SRESIST = "sresist"
-		PRESIST = "presist"
+		RESIST  = "resist"
 	)
 
 	type shopItem struct {
@@ -324,12 +323,11 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 			maxStamina := float32(0)
 			maxLife := float32(0)
 			maxValue := float32(0)
-			maxSResist := float32(0)
-			maxPResist := float32(0)
+			maxResist := float32(0)
 
 			for _, skill := range item.Skills {
 				if skill.DamageAmount != nil {
-					damage := calculateAttributesValue(state.Character.Attributes, skill.DamageAmount) / float32(item.Price)
+					damage := calculateAttributesValue(state.Character.Attributes, skill.DamageAmount)
 					if damage > maxDamage {
 						maxDamage = damage
 					}
@@ -337,13 +335,13 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil {
 					if skill.CasterEffects.Attributes.Stamina != nil {
-						stamina := calculateAttributesValue(state.Character.Attributes, skill.CasterEffects.Attributes.Stamina) / float32(item.Price)
+						stamina := calculateAttributesValue(state.Character.Attributes, skill.CasterEffects.Attributes.Stamina)
 						if stamina > maxStamina {
 							maxStamina = stamina
 						}
 					}
 					if skill.CasterEffects.Attributes.Life != nil {
-						life := calculateAttributesValue(state.Character.Attributes, skill.CasterEffects.Attributes.Life) / float32(item.Price)
+						life := calculateAttributesValue(state.Character.Attributes, skill.CasterEffects.Attributes.Life)
 						if life > maxLife {
 							maxLife = life
 						}
@@ -352,22 +350,35 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 			}
 
 			maxValue = calculateAttributesValue(&swagger.DungeonsandtrollsAttributes{
-				Strength:       1,
-				Dexterity:      1,
-				Intelligence:   1,
-				Willpower:      1,
-				Constitution:   1,
-				SlashResist:    1,
-				PierceResist:   1,
-				FireResist:     1,
-				PoisonResist:   1,
-				ElectricResist: 1,
-				Life:           1,
-				Stamina:        1,
-				Mana:           1,
+				Strength:  1,
+				Dexterity: 1,
+				// Intelligence:   1,
+				// Willpower:      1,
+				Constitution: 1,
+				SlashResist:  0.5,
+				PierceResist: 0.5,
+				// FireResist:     1,
+				// PoisonResist:   1,
+				// ElectricResist: 1,
+				// Life:           1,
+				// Stamina:        1,
+				// Mana:           1,
 			}, item.Attributes)
-			maxSResist = item.Attributes.SlashResist
-			maxPResist = item.Attributes.PierceResist
+			maxResist = calculateAttributesValue(&swagger.DungeonsandtrollsAttributes{
+				// Strength:  1,
+				// Dexterity: 1,
+				// Intelligence:   1,
+				// Willpower:      1,
+				// Constitution: 1,
+				SlashResist:  1,
+				PierceResist: 1,
+				// FireResist:     1,
+				// PoisonResist:   1,
+				// ElectricResist: 1,
+				// Life:           1,
+				// Stamina:        1,
+				// Mana:           1,
+			}, item.Attributes)
 
 			bestItems[DAMAGE] = append(bestItems[DAMAGE], shopItem{
 				Value: maxDamage,
@@ -385,12 +396,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				Value: maxValue,
 				Item:  item,
 			})
-			bestItems[SRESIST] = append(bestItems[SRESIST], shopItem{
-				Value: maxSResist,
-				Item:  item,
-			})
-			bestItems[PRESIST] = append(bestItems[PRESIST], shopItem{
-				Value: maxPResist,
+			bestItems[RESIST] = append(bestItems[RESIST], shopItem{
+				Value: maxResist,
 				Item:  item,
 			})
 		}
@@ -398,28 +405,32 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 	for _, s := range bestItems {
 		slices.SortFunc(s, func(a, b shopItem) int {
-			if b.Value > a.Value {
+			if a.Value > b.Value {
 				return -1
 			}
-			if b.Value < a.Value {
+			if a.Value < b.Value {
 				return 1
 			}
 			return 0
 		})
 	}
 
+	logStruct(reflect.ValueOf(bestItems[DAMAGE][:10]), "damage")
+
 	res := []swagger.DungeonsandtrollsItem{}
 
 	money := state.Character.Money
 	slots := map[swagger.DungeonsandtrollsItemType]bool{}
 
-	kinds := []string{DAMAGE, SRESIST, PRESIST, STAMINA, LIFE, OTHER}
+	kinds := []string{DAMAGE, RESIST, RESIST, STAMINA, LIFE, OTHER}
+	// kinds := []string{SRESIST}
 	for i, kind := range kinds {
 		for _, item := range bestItems[kind] {
 			if float64(item.Item.Price) <= float64(money)/float64(len(kinds)-i) && !slots[*item.Item.Slot] {
 				res = append(res, item.Item)
 				slots[*item.Item.Slot] = true
 				money -= item.Item.Price
+
 				break
 			}
 		}
