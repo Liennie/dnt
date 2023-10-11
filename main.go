@@ -179,7 +179,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	}
 
 	if (state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 4)) ||
-		(!haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
+		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
 		var skill *swagger.DungeonsandtrollsSkill
 
 		for _, equip := range state.Character.Equip {
@@ -287,6 +287,33 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 			Yell: &swagger.DungeonsandtrollsMessage{
 				Text: "Where are the stairs? I can't find them!",
 			},
+		}
+	}
+
+	if distance(*state.CurrentPosition, *stairsCoords) <= 1 && state.CurrentLevel != 0 {
+		players := playersOnCurrentLevel(state)
+
+		maxDist := 0
+		var maxPlayer swagger.DungeonsandtrollsCharacter
+		for _, player := range players {
+			if player.Id == state.Character.Id {
+				continue
+			}
+
+			dist := distance(*stairsCoords, coords2pos(*player.Coordinates))
+			if dist > maxDist {
+				maxDist = dist
+				maxPlayer = player
+			}
+		}
+
+		if maxDist > 2 {
+			return &swagger.DungeonsandtrollsCommandsBatch{
+				Yell: &swagger.DungeonsandtrollsMessage{
+					Text: fmt.Sprintf("Hurry up, %s!", maxPlayer.Name),
+				},
+				Move: state.CurrentPosition,
+			}
 		}
 	}
 
@@ -781,4 +808,27 @@ func lineOfSight(position swagger.DungeonsandtrollsPosition, state swagger.Dunge
 		}
 	}
 	return false
+}
+
+func coords2pos(coords swagger.DungeonsandtrollsCoordinates) swagger.DungeonsandtrollsPosition {
+	return swagger.DungeonsandtrollsPosition{
+		PositionX: coords.PositionX,
+		PositionY: coords.PositionY,
+	}
+}
+
+func playersOnCurrentLevel(state swagger.DungeonsandtrollsGameState) []swagger.DungeonsandtrollsCharacter {
+	res := []swagger.DungeonsandtrollsCharacter{}
+
+	for _, level := range state.Map_.Levels {
+		if level.Level != state.CurrentLevel {
+			continue
+		}
+
+		for _, object := range level.Objects {
+			res = append(res, object.Players...)
+		}
+	}
+
+	return res
 }
