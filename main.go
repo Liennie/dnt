@@ -395,8 +395,11 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 	var bestItems []shopItem
 	newBestItems := []shopItem{}
 
+	moneyLimit := float32(state.Character.Money) / 4
+	stamWeight := float32(0.05)
+
 	for _, item := range shop {
-		if float32(item.Price) <= float32(state.Character.Money)/5 && haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) {
+		if float32(item.Price) <= moneyLimit && haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) {
 			maxDamage := float32(0)
 
 			for _, skill := range item.Skills {
@@ -425,7 +428,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 			if maxDamage > 0 {
 				for _, item2 := range shop {
-					if float32(item2.Price) <= float32(state.Character.Money)/5 &&
+					if float32(item2.Price) <= moneyLimit &&
 						haveRequiredAttirbutes(state.Character.Attributes, item2.Requirements) &&
 						*item.Slot != *item2.Slot {
 
@@ -466,7 +469,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
-			if float32(item.Price) <= float32(state.Character.Money)/5 &&
+			if float32(item.Price) <= moneyLimit &&
 				haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) &&
 				*item.Slot != *bestItem.Items[0].Slot &&
 				*item.Slot != *bestItem.Items[1].Slot {
@@ -484,7 +487,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				if aStam > 0 || bStam > 0 || cStam > 0 {
 					skill, value := getItemDamage(&bestItem.Items[0], attrs)
 					value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-					value *= (1 + max(aStam, bStam, cStam)*0.2)
+					value *= (1 + max(aStam, bStam, cStam)*stamWeight)
 
 					newBestItems = append(newBestItems, shopItem{
 						Value: value,
@@ -508,7 +511,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
-			if float32(item.Price) <= float32(state.Character.Money)/5 &&
+			if float32(item.Price) <= moneyLimit &&
 				haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) &&
 				*item.Slot != *bestItem.Items[0].Slot &&
 				*item.Slot != *bestItem.Items[1].Slot &&
@@ -529,7 +532,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-				value *= (1 + max(aStam, bStam, cStam, dStam)*0.2)
+				value *= (1 + max(aStam, bStam, cStam, dStam)*stamWeight)
 				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
 
 				newBestItems = append(newBestItems, shopItem{
@@ -553,7 +556,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
-			if float32(item.Price) <= float32(state.Character.Money)/5 &&
+			if float32(item.Price) <= moneyLimit &&
 				haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) &&
 				*item.Slot != *bestItem.Items[0].Slot &&
 				*item.Slot != *bestItem.Items[1].Slot &&
@@ -577,7 +580,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*0.2)
+				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*stamWeight)
 				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
 				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
 
@@ -602,7 +605,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
-			if float32(item.Price) <= float32(state.Character.Money)/5 &&
+			if float32(item.Price) <= moneyLimit &&
 				haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) &&
 				*item.Slot != *bestItem.Items[0].Slot &&
 				*item.Slot != *bestItem.Items[1].Slot &&
@@ -629,7 +632,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*0.2)
+				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*stamWeight)
 				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
 				value *= (1 + bestItem.Items[4].Attributes.SlashResist) * (1 + bestItem.Items[4].Attributes.PierceResist*1.5)
 
