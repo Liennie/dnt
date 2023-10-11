@@ -112,6 +112,7 @@ func logStruct(v reflect.Value, name string) {
 
 func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCommandsBatch {
 	log.Println("Score:", state.Score)
+	log.Println("Character.Money", state.Character.Money)
 	// logStruct(reflect.ValueOf(state.Character.Equip), "Character.Equip")
 	log.Println()
 	logStruct(reflect.ValueOf(state.Character.Attributes), "Character.Attributes")
@@ -156,9 +157,31 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	stairsCoords := findStairs(&state)
 	monster := findMonster(&state)
 
-	var skill *swagger.DungeonsandtrollsSkill
+	var attackSkill *swagger.DungeonsandtrollsSkill
 
-	if state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 5) {
+	maxDamage := float32(0)
+	for _, equip := range state.Character.Equip {
+		for _, equipSkill := range equip.Skills {
+			equipSkill := equipSkill
+
+			if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
+				*equipSkill.Target == swagger.CHARACTER_SkillTarget &&
+				equipSkill.DamageAmount != nil &&
+				calculateAttributesValue(state.Character.Attributes, equipSkill.DamageAmount) > maxDamage {
+
+				damage := calculateAttributesValue(state.Character.Attributes, equipSkill.DamageAmount) * calculateAttributesValue(state.Character.Attributes, equipSkill.Range_)
+				if damage > maxDamage {
+					maxDamage = damage
+					attackSkill = &equipSkill
+				}
+			}
+		}
+	}
+
+	if (state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 4)) ||
+		(!haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
+		var skill *swagger.DungeonsandtrollsSkill
+
 		for _, equip := range state.Character.Equip {
 			for _, equipSkill := range equip.Skills {
 				equipSkill := equipSkill
@@ -184,7 +207,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		}
 	}
 
-	if state.Character.Attributes.Life < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 5) {
+	if state.Character.Attributes.Life < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 3) {
+		var skill *swagger.DungeonsandtrollsSkill
+
 		for _, equip := range state.Character.Equip {
 			for _, equipSkill := range equip.Skills {
 				equipSkill := equipSkill
@@ -211,50 +236,34 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	}
 
 	if monster != nil {
-		maxDamage := float32(0)
-		for _, equip := range state.Character.Equip {
-			for _, equipSkill := range equip.Skills {
-				equipSkill := equipSkill
-
-				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
-					*equipSkill.Target == swagger.CHARACTER_SkillTarget &&
-					equipSkill.DamageAmount != nil &&
-					calculateAttributesValue(state.Character.Attributes, equipSkill.DamageAmount) > maxDamage {
-
-					skill = &equipSkill
-					maxDamage = calculateAttributesValue(state.Character.Attributes, equipSkill.DamageAmount)
-				}
-			}
-		}
-
-		if skill != nil {
+		if attackSkill != nil {
 			log.Println("Let's fight!")
 			dist := distance(*state.CurrentPosition, *monster.Position)
-			if dist <= int(calculateAttributesValue(state.Character.Attributes, skill.Range_)) {
+			if dist <= int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)) && lineOfSight(*monster.Position, state) {
 				log.Println("Attacking ...")
-				log.Println("Picked skill:", skill.Name, "with target type:", *skill.Target)
-				damage := calculateAttributesValue(state.Character.Attributes, skill.DamageAmount)
+				log.Println("Picked skill:", attackSkill.Name, "with target type:", *attackSkill.Target)
+				damage := calculateAttributesValue(state.Character.Attributes, attackSkill.DamageAmount)
 				log.Println("Estimated damage ignoring resistances:", damage)
 
-				if *skill.Target == swagger.POSITION_SkillTarget {
+				if *attackSkill.Target == swagger.POSITION_SkillTarget {
 					return &swagger.DungeonsandtrollsCommandsBatch{
 						Skill: &swagger.DungeonsandtrollsSkillUse{
-							SkillId:  skill.Id,
+							SkillId:  attackSkill.Id,
 							Position: monster.Position,
 						},
 					}
 				}
-				if *skill.Target == swagger.CHARACTER_SkillTarget {
+				if *attackSkill.Target == swagger.CHARACTER_SkillTarget {
 					return &swagger.DungeonsandtrollsCommandsBatch{
 						Skill: &swagger.DungeonsandtrollsSkillUse{
-							SkillId:  skill.Id,
+							SkillId:  attackSkill.Id,
 							TargetId: monster.Monsters[0].Id,
 						},
 					}
 				}
 				return &swagger.DungeonsandtrollsCommandsBatch{
 					Skill: &swagger.DungeonsandtrollsSkillUse{
-						SkillId: skill.Id,
+						SkillId: attackSkill.Id,
 					},
 				}
 			} else {
@@ -406,7 +415,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				if aStam > 0 || bStam > 0 || cStam > 0 {
 					skill, value := getItemDamage(&bestItem.Items[0], attrs)
 					value *= calculateAttributesValue(attrs, skill.Range_)
-					value *= (1 + max(aStam, bStam, cStam)*0.5)
+					value *= (1 + max(aStam, bStam, cStam)*0.2)
 
 					newBestItems = append(newBestItems, shopItem{
 						Value: value,
@@ -451,8 +460,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= calculateAttributesValue(attrs, skill.Range_)
-				value *= (1 + max(aStam, bStam, cStam, dStam)*0.5)
-				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist)
+				value *= (1 + max(aStam, bStam, cStam, dStam)*0.2)
+				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
 
 				newBestItems = append(newBestItems, shopItem{
 					Value: value,
@@ -499,9 +508,9 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= calculateAttributesValue(attrs, skill.Range_)
-				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*0.5)
-				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist)
-				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist)
+				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*0.2)
+				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
+				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
 
 				newBestItems = append(newBestItems, shopItem{
 					Value: value,
@@ -551,9 +560,9 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= calculateAttributesValue(attrs, skill.Range_)
-				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*0.5)
-				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist)
-				value *= (1 + bestItem.Items[4].Attributes.SlashResist) * (1 + bestItem.Items[4].Attributes.PierceResist)
+				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*0.2)
+				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
+				value *= (1 + bestItem.Items[4].Attributes.SlashResist) * (1 + bestItem.Items[4].Attributes.PierceResist*1.5)
 
 				newBestItems = append(newBestItems, shopItem{
 					Value: value,
@@ -757,4 +766,19 @@ func abs(i int) int {
 
 func distance(a, b swagger.DungeonsandtrollsPosition) int {
 	return abs(int(a.PositionX)-int(b.PositionX)) + abs(int(a.PositionY)-int(b.PositionY))
+}
+
+func lineOfSight(position swagger.DungeonsandtrollsPosition, state swagger.DungeonsandtrollsGameState) bool {
+	for _, level := range state.Map_.Levels {
+		if level.Level != state.CurrentLevel {
+			continue
+		}
+
+		for _, pm := range level.PlayerMap {
+			if *pm.Position == position {
+				return pm.LineOfSight
+			}
+		}
+	}
+	return false
 }
