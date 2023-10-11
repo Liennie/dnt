@@ -315,7 +315,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 	shop := state.ShopItems
 
-	bestItems := []shopItem{}
+	var bestItems []shopItem
 	newBestItems := []shopItem{}
 
 	for _, item := range shop {
@@ -352,7 +352,14 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 						haveRequiredAttirbutes(state.Character.Attributes, item2.Requirements) &&
 						*item.Slot != *item2.Slot {
 
-						_, value := getItemDamage(&item, addAttributes(state.Character.Attributes, item.Attributes, item2.Attributes))
+						attrs := addAttributes(
+							state.Character.Attributes,
+							item.Attributes,
+							item2.Attributes,
+						)
+
+						skill, value := getItemDamage(&item, attrs)
+						value *= calculateAttributesValue(attrs, skill.Range_)
 
 						newBestItems = append(newBestItems, shopItem{
 							Value: value,
@@ -396,7 +403,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, cStam := getItemRest(&item, attrs)
 
 				if aStam > 0 || bStam > 0 || cStam > 0 {
-					_, value := getItemDamage(&bestItem.Items[0], attrs)
+					skill, value := getItemDamage(&bestItem.Items[0], attrs)
+					value *= calculateAttributesValue(attrs, skill.Range_)
 					value *= max(aStam, bStam, cStam)
 
 					newBestItems = append(newBestItems, shopItem{
@@ -440,7 +448,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, cStam := getItemRest(&bestItem.Items[2], attrs)
 				_, dStam := getItemRest(&item, attrs)
 
-				_, value := getItemDamage(&bestItem.Items[0], attrs)
+				skill, value := getItemDamage(&bestItem.Items[0], attrs)
+				value *= calculateAttributesValue(attrs, skill.Range_)
 				value *= max(aStam, bStam, cStam, dStam)
 				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist)
 
@@ -487,7 +496,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, dStam := getItemRest(&bestItem.Items[3], attrs)
 				_, eStam := getItemRest(&item, attrs)
 
-				_, value := getItemDamage(&bestItem.Items[0], attrs)
+				skill, value := getItemDamage(&bestItem.Items[0], attrs)
+				value *= calculateAttributesValue(attrs, skill.Range_)
 				value *= max(aStam, bStam, cStam, dStam, eStam)
 				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist)
 				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist)
@@ -538,7 +548,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, eStam := getItemRest(&bestItem.Items[4], attrs)
 				_, fStam := getItemRest(&item, attrs)
 
-				_, value := getItemDamage(&bestItem.Items[0], attrs)
+				skill, value := getItemDamage(&bestItem.Items[0], attrs)
+				value *= calculateAttributesValue(attrs, skill.Range_)
 				value *= max(aStam, bStam, cStam, dStam, eStam, fStam)
 				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist)
 				value *= (1 + bestItem.Items[4].Attributes.SlashResist) * (1 + bestItem.Items[4].Attributes.PierceResist)
