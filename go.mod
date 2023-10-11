@@ -1,6 +1,6 @@
 module github.com/liennie/gdt
 
-go 1.19
+go 1.21
 
 require (
 	github.com/gdg-garage/dungeons-and-trolls-go-client v1.10.0
