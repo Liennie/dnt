@@ -184,7 +184,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		}
 	}
 
-	if (state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 4)) ||
+	if (state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) < int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
 		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
 		var skill *swagger.DungeonsandtrollsSkill
 
@@ -350,13 +350,13 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 func spendAttributePoints(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsAttributes {
 	state.Character.SkillPoints -= 0.1
 	return &swagger.DungeonsandtrollsAttributes{
-		Strength:  state.Character.SkillPoints / 7,
-		Dexterity: state.Character.SkillPoints / 7,
+		Strength:  state.Character.SkillPoints / 5,
+		Dexterity: state.Character.SkillPoints / 5,
 		// Intelligence: state.Character.SkillPoints / 7,
 		// Willpower:    state.Character.SkillPoints / 7,
-		Constitution: state.Character.SkillPoints / 7,
-		SlashResist:  state.Character.SkillPoints / 7,
-		PierceResist: state.Character.SkillPoints / 7,
+		Constitution: state.Character.SkillPoints / 5,
+		SlashResist:  state.Character.SkillPoints / 5,
+		PierceResist: state.Character.SkillPoints / 5,
 		// FireResist:     state.Character.SkillPoints / 13,
 		// PoisonResist:   state.Character.SkillPoints / 13,
 		// ElectricResist: state.Character.SkillPoints / 13,
