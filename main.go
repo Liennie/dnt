@@ -133,6 +133,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		log.Println("Spending attribute points ...")
 		return &swagger.DungeonsandtrollsCommandsBatch{
 			AssignSkillPoints: spendAttributePoints(&state),
+			Yell: &swagger.DungeonsandtrollsMessage{
+				Text: "Assigning skill points.",
+			},
 		}
 	}
 
@@ -147,6 +150,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 
 			return &swagger.DungeonsandtrollsCommandsBatch{
 				Buy: &swagger.DungeonsandtrollsIdentifiers{Ids: itemIds},
+				Yell: &swagger.DungeonsandtrollsMessage{
+					Text: "Buying swag.",
+				},
 			}
 		} else {
 			log.Println("ERROR: Found no item to buy!")
@@ -203,6 +209,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 				Skill: &swagger.DungeonsandtrollsSkillUse{
 					SkillId: skill.Id,
 				},
+				Yell: &swagger.DungeonsandtrollsMessage{
+					Text: "Resting.",
+				},
 			}
 		}
 	}
@@ -231,6 +240,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 				Skill: &swagger.DungeonsandtrollsSkillUse{
 					SkillId: skill.Id,
 				},
+				Yell: &swagger.DungeonsandtrollsMessage{
+					Text: "Healing.",
+				},
 			}
 		}
 	}
@@ -251,6 +263,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 							SkillId:  attackSkill.Id,
 							Position: monster.Position,
 						},
+						Yell: &swagger.DungeonsandtrollsMessage{
+							Text: fmt.Sprintf("%s!", attackSkill.Name),
+						},
 					}
 				}
 				if *attackSkill.Target == swagger.CHARACTER_SkillTarget {
@@ -259,11 +274,17 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 							SkillId:  attackSkill.Id,
 							TargetId: monster.Monsters[0].Id,
 						},
+						Yell: &swagger.DungeonsandtrollsMessage{
+							Text: fmt.Sprintf("%s!", attackSkill.Name),
+						},
 					}
 				}
 				return &swagger.DungeonsandtrollsCommandsBatch{
 					Skill: &swagger.DungeonsandtrollsSkillUse{
 						SkillId: attackSkill.Id,
+					},
+					Yell: &swagger.DungeonsandtrollsMessage{
+						Text: fmt.Sprintf("%s!", attackSkill.Name),
 					},
 				}
 			} else {
@@ -275,6 +296,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 			log.Println("No skill. Moving towards stairs ...")
 			return &swagger.DungeonsandtrollsCommandsBatch{
 				Move: stairsCoords,
+				Yell: &swagger.DungeonsandtrollsMessage{
+					Text: "Running away!",
+				},
 			}
 		}
 	}
