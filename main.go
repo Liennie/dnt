@@ -37,6 +37,9 @@ func main() {
 		return
 	}
 
+	lastYell := ""
+	lastYellTick := int32(0)
+
 	for {
 		// Use the client to make API requests
 		gameResp, httpResp, err := client.DungeonsAndTrollsApi.DungeonsAndTrollsGame(ctx, nil)
@@ -52,6 +55,15 @@ func main() {
 		if command == nil {
 			time.Sleep(time.Second)
 			continue
+		}
+
+		if command.Yell != nil {
+			if command.Yell.Text == lastYell && gameResp.Tick < lastYellTick+10 {
+				command.Yell = nil
+			} else {
+				lastYell = command.Yell.Text
+				lastYellTick = gameResp.Tick
+			}
 		}
 
 		logStruct(reflect.ValueOf(command), "Command")
@@ -184,7 +196,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		}
 	}
 
-	if (state.Character.Attributes.Stamina < 100 && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) < int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
+	if (state.Character.Attributes.Stamina < state.Character.MaxAttributes.Stamina && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
 		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
 		var skill *swagger.DungeonsandtrollsSkill
 
@@ -250,7 +262,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	if monster != nil {
 		if attackSkill != nil {
 			log.Println("Let's fight!")
-			dist := distance(*state.CurrentPosition, *monster.Position)
+			dist := mapDistance(*monster.Position, state)
 			if dist <= int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)) && lineOfSight(*monster.Position, state) {
 				log.Println("Attacking ...")
 				log.Println("Picked skill:", attackSkill.Name, "with target type:", *attackSkill.Target)
@@ -290,12 +302,15 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 			} else {
 				return &swagger.DungeonsandtrollsCommandsBatch{
 					Move: monster.Position,
+					Yell: &swagger.DungeonsandtrollsMessage{
+						Text: "Let's fight!",
+					},
 				}
 			}
 		} else {
 			log.Println("No skill. Moving towards stairs ...")
 			return &swagger.DungeonsandtrollsCommandsBatch{
-				Move: stairsCoords,
+				Move: findSpawn(&state),
 				Yell: &swagger.DungeonsandtrollsMessage{
 					Text: "Running away!",
 				},
@@ -331,7 +346,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 			}
 		}
 
-		if maxDist > 2 {
+		if maxDist > 1 {
 			return &swagger.DungeonsandtrollsCommandsBatch{
 				Yell: &swagger.DungeonsandtrollsMessage{
 					Text: fmt.Sprintf("Hurry up, %s!", maxPlayer.Name),
@@ -344,6 +359,9 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	log.Println("Moving towards stairs ...")
 	return &swagger.DungeonsandtrollsCommandsBatch{
 		Move: stairsCoords,
+		Yell: &swagger.DungeonsandtrollsMessage{
+			Text: "Going towards stairs.",
+		},
 	}
 }
 
@@ -419,7 +437,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 						skill, value := getItemDamage(&item, attrs)
 						if skill != nil {
-							value *= calculateAttributesValue(attrs, skill.Range_)
+							value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 						}
 
 						newBestItems = append(newBestItems, shopItem{
@@ -465,7 +483,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				if aStam > 0 || bStam > 0 || cStam > 0 {
 					skill, value := getItemDamage(&bestItem.Items[0], attrs)
-					value *= calculateAttributesValue(attrs, skill.Range_)
+					value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 					value *= (1 + max(aStam, bStam, cStam)*0.2)
 
 					newBestItems = append(newBestItems, shopItem{
@@ -510,7 +528,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, dStam := getItemRest(&item, attrs)
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
-				value *= calculateAttributesValue(attrs, skill.Range_)
+				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 				value *= (1 + max(aStam, bStam, cStam, dStam)*0.2)
 				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
 
@@ -558,7 +576,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, eStam := getItemRest(&item, attrs)
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
-				value *= calculateAttributesValue(attrs, skill.Range_)
+				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*0.2)
 				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
 				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
@@ -610,7 +628,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, fStam := getItemRest(&item, attrs)
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
-				value *= calculateAttributesValue(attrs, skill.Range_)
+				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*0.2)
 				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
 				value *= (1 + bestItem.Items[4].Attributes.SlashResist) * (1 + bestItem.Items[4].Attributes.PierceResist*1.5)
@@ -661,7 +679,7 @@ func findMonster(state *swagger.DungeonsandtrollsGameState) *swagger.Dungeonsand
 			object := map_.Objects[i]
 			if len(object.Monsters) > 0 {
 				for _, monster := range object.Monsters {
-					if distance(*state.CurrentPosition, *object.Position) < closestDist && monster.Name != "Chest" {
+					if mapDistance(*object.Position, *state) < closestDist && monster.Name != "Chest" {
 						log.Printf("Found monster on position: %+v\n", object.Position)
 						closestDist = distance(*state.CurrentPosition, *object.Position)
 						closest = &object
@@ -676,12 +694,10 @@ func findMonster(state *swagger.DungeonsandtrollsGameState) *swagger.Dungeonsand
 
 func findStairs(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsPosition {
 	level := state.CurrentLevel
-	log.Println("Current level:", level)
 	for _, map_ := range state.Map_.Levels {
 		if map_.Level != level {
 			continue
 		}
-		log.Println("Found current level ...")
 		maxPortal := 0
 		var portalPos swagger.DungeonsandtrollsPosition
 		for i := range map_.Objects {
@@ -699,6 +715,23 @@ func findStairs(state *swagger.DungeonsandtrollsGameState) *swagger.Dungeonsandt
 			object := map_.Objects[i]
 			if object.IsStairs {
 				log.Printf("Found stairs on position: %+v\n", object.Position)
+				return object.Position
+			}
+		}
+	}
+	return nil
+}
+
+func findSpawn(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsPosition {
+	for _, map_ := range state.Map_.Levels {
+		if map_.Level != state.CurrentLevel {
+			continue
+		}
+
+		for i := range map_.Objects {
+			object := map_.Objects[i]
+			if object.IsSpawn {
+				log.Printf("Found spawn on position: %+v\n", object.Position)
 				return object.Position
 			}
 		}
@@ -832,6 +865,21 @@ func lineOfSight(position swagger.DungeonsandtrollsPosition, state swagger.Dunge
 		}
 	}
 	return false
+}
+
+func mapDistance(position swagger.DungeonsandtrollsPosition, state swagger.DungeonsandtrollsGameState) int {
+	for _, level := range state.Map_.Levels {
+		if level.Level != state.CurrentLevel {
+			continue
+		}
+
+		for _, pm := range level.PlayerMap {
+			if *pm.Position == position {
+				return int(pm.Distance)
+			}
+		}
+	}
+	return math.MaxInt
 }
 
 func coords2pos(coords swagger.DungeonsandtrollsCoordinates) swagger.DungeonsandtrollsPosition {
