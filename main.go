@@ -204,41 +204,12 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		}
 	}
 
-	if (state.Character.Attributes.Stamina < state.Character.MaxAttributes.Stamina && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
-		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) ||
-		(state.Character.Attributes.Mana < state.Character.MaxAttributes.Mana && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
-		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
-		var skill *swagger.DungeonsandtrollsSkill
+	if state.Character.Attributes.Life < state.Character.MaxAttributes.Life &&
+		(state.Character.Attributes.Life/state.Character.MaxAttributes.Life) < (state.Character.Attributes.Stamina/state.Character.MaxAttributes.Stamina) &&
+		(state.Character.Attributes.Life/state.Character.MaxAttributes.Life) < (state.Character.Attributes.Mana/state.Character.MaxAttributes.Stamina) &&
+		state.Character.LastDamageTaken > 2 &&
+		(monster == nil || distance(*state.CurrentPosition, *monster.Position) > 6) {
 
-		for _, equip := range state.Character.Equip {
-			for _, equipSkill := range equip.Skills {
-				equipSkill := equipSkill
-
-				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
-					equipSkill.CasterEffects != nil &&
-					equipSkill.CasterEffects.Attributes != nil &&
-					equipSkill.CasterEffects.Attributes.Stamina != nil &&
-					calculateAttributesValue(state.Character.Attributes, equipSkill.CasterEffects.Attributes.Stamina) > 0 {
-
-					skill = &equipSkill
-					break
-				}
-			}
-		}
-		if skill != nil {
-			log.Println("Resting")
-			return &swagger.DungeonsandtrollsCommandsBatch{
-				Skill: &swagger.DungeonsandtrollsSkillUse{
-					SkillId: skill.Id,
-				},
-				Yell: &swagger.DungeonsandtrollsMessage{
-					Text: "Resting.",
-				},
-			}
-		}
-	}
-
-	if state.Character.Attributes.Life < state.Character.MaxAttributes.Life && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 6) {
 		var skill *swagger.DungeonsandtrollsSkill
 
 		for _, equip := range state.Character.Equip {
@@ -264,7 +235,47 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 					TargetId: state.Character.Id,
 				},
 				Yell: &swagger.DungeonsandtrollsMessage{
-					Text: "Healing.",
+					Text: "<color=\"green\">Healing.</color>",
+				},
+			}
+		}
+	}
+
+	if (state.Character.Attributes.Stamina < state.Character.MaxAttributes.Stamina &&
+		state.Character.LastDamageTaken > 2 &&
+		(monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
+		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) ||
+		(state.Character.Attributes.Mana < state.Character.MaxAttributes.Mana &&
+			state.Character.LastDamageTaken > 2 &&
+			(monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
+		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
+
+		var skill *swagger.DungeonsandtrollsSkill
+
+		for _, equip := range state.Character.Equip {
+			for _, equipSkill := range equip.Skills {
+				equipSkill := equipSkill
+
+				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
+					!equipSkill.Flags.Passive &&
+					equipSkill.CasterEffects != nil &&
+					equipSkill.CasterEffects.Attributes != nil &&
+					equipSkill.CasterEffects.Attributes.Stamina != nil &&
+					calculateAttributesValue(state.Character.Attributes, equipSkill.CasterEffects.Attributes.Stamina) > 0 {
+
+					skill = &equipSkill
+					break
+				}
+			}
+		}
+		if skill != nil {
+			log.Println("Resting")
+			return &swagger.DungeonsandtrollsCommandsBatch{
+				Skill: &swagger.DungeonsandtrollsSkillUse{
+					SkillId: skill.Id,
+				},
+				Yell: &swagger.DungeonsandtrollsMessage{
+					Text: "<color=#00FFFF>Resting.</color>",
 				},
 			}
 		}
@@ -287,7 +298,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 							Position: monster.Position,
 						},
 						Yell: &swagger.DungeonsandtrollsMessage{
-							Text: fmt.Sprintf("%s!", attackSkill.Name),
+							Text: fmt.Sprintf("<color=\"red\">%s!</color>", attackSkill.Name),
 						},
 					}
 				}
@@ -298,7 +309,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 							TargetId: monster.Monsters[0].Id,
 						},
 						Yell: &swagger.DungeonsandtrollsMessage{
-							Text: fmt.Sprintf("%s!", attackSkill.Name),
+							Text: fmt.Sprintf("<color=\"red\">%s!</color>", attackSkill.Name),
 						},
 					}
 				}
@@ -307,14 +318,14 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 						SkillId: attackSkill.Id,
 					},
 					Yell: &swagger.DungeonsandtrollsMessage{
-						Text: fmt.Sprintf("%s!", attackSkill.Name),
+						Text: fmt.Sprintf("<color=\"red\">%s!</color>", attackSkill.Name),
 					},
 				}
 			} else {
 				return &swagger.DungeonsandtrollsCommandsBatch{
 					Move: monster.Position,
 					Yell: &swagger.DungeonsandtrollsMessage{
-						Text: "Let's fight!",
+						Text: "<color=\"yellow\">Let's fight!</color>",
 					},
 				}
 			}
@@ -323,7 +334,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 			return &swagger.DungeonsandtrollsCommandsBatch{
 				Move: findSpawn(&state),
 				Yell: &swagger.DungeonsandtrollsMessage{
-					Text: "Running away!",
+					Text: "<color=\"purple\">Running away!</color>",
 				},
 			}
 		}
@@ -371,7 +382,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	return &swagger.DungeonsandtrollsCommandsBatch{
 		Move: stairsCoords,
 		Yell: &swagger.DungeonsandtrollsMessage{
-			Text: "Going towards stairs.",
+			Text: "<color=\"yellow\">Going towards stairs.</color>",
 		},
 	}
 }
@@ -419,6 +430,9 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 					if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Mana != nil && skill.CasterEffects.Attributes.Mana.Mana < 0 {
 						continue
 					}
+					if *skill.DamageType != swagger.FIRE_DungeonsandtrollsDamageType {
+						continue
+					}
 
 					damage := calculateAttributesValue(&swagger.DungeonsandtrollsAttributes{
 						Strength:       1,
@@ -452,7 +466,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 					if float32(item2.Price) <= moneyLimit && *item.Slot != *item2.Slot {
 						skill, value := getItemDamage(&item, attrs)
-						value = 1 + value*value*5
+						value = 1 + value*value*value
 						if skill != nil {
 							value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 						}
@@ -513,7 +527,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				if aStam > 0 || bStam > 0 || cStam > 0 {
 					skill, value := getItemDamage(&bestItem.Items[0], attrs)
-					value = 1 + value*value*5
+					value = 1 + value*value*value
 					value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 					value *= (1 + max(aStam, bStam, cStam)*restWeight)
 					value *= (1 + max(aPatch, bPatch, cPatch)*restWeight)
@@ -576,7 +590,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 				if aPatch > 0 || bPatch > 0 || cPatch > 0 || dPatch > 0 {
 					skill, value := getItemDamage(&bestItem.Items[0], attrs)
-					value = 1 + value*value*5
+					value = 1 + value*value*value
 					value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 					value *= (1 + max(aStam, bStam, cStam, dStam)*restWeight)
 					value *= (1 + max(aPatch, bPatch, cPatch, dPatch)*restWeight)
@@ -645,7 +659,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, ePatch := getItemPatch(&item, attrs)
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
-				value = 1 + value*value*5
+				value = 1 + value*value*value
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*restWeight)
 				value *= (1 + max(aPatch, bPatch, cPatch, dPatch, ePatch)*restWeight)
@@ -719,7 +733,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, fPatch := getItemPatch(&item, attrs)
 
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
-				value = 1 + value*value*5
+				value = 1 + value*value*value
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
 				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*restWeight)
 				value *= (1 + max(aPatch, bPatch, cPatch, dPatch, ePatch, fPatch)*restWeight)
@@ -864,8 +878,10 @@ func getItemRest(item *swagger.DungeonsandtrollsItem, attrs *swagger.Dungeonsand
 	for _, skill := range item.Skills {
 		skill := skill
 
-		if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Stamina != nil && skill.CasterEffects.Attributes.Mana != nil {
-			value := calculateAttributesValue(skill.CasterEffects.Attributes.Stamina, attrs) * calculateAttributesValue(skill.CasterEffects.Attributes.Mana, attrs)
+		if !skill.Flags.Passive && skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Stamina != nil && skill.CasterEffects.Attributes.Mana != nil {
+			stam := calculateAttributesValue(skill.CasterEffects.Attributes.Stamina, attrs)
+			mana := calculateAttributesValue(skill.CasterEffects.Attributes.Mana, attrs)
+			value := stam * mana * mana
 			value *= value
 			if value > bestValue {
 				bestValue = value
