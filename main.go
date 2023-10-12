@@ -182,6 +182,10 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 		for _, equipSkill := range equip.Skills {
 			equipSkill := equipSkill
 
+			if equipSkill.CasterEffects != nil && equipSkill.CasterEffects.Attributes != nil && equipSkill.CasterEffects.Attributes.Mana != nil && equipSkill.CasterEffects.Attributes.Mana.Mana < 0 {
+				continue
+			}
+
 			if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
 				*equipSkill.Target == swagger.CHARACTER_SkillTarget &&
 				equipSkill.DamageAmount != nil &&
@@ -197,6 +201,8 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 	}
 
 	if (state.Character.Attributes.Stamina < state.Character.MaxAttributes.Stamina && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
+		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) ||
+		(state.Character.Attributes.Mana < state.Character.MaxAttributes.Mana && state.Character.LastDamageTaken > 2 && (monster == nil || attackSkill == nil || distance(*state.CurrentPosition, *monster.Position) > int(calculateAttributesValue(state.Character.Attributes, attackSkill.Range_)+1))) ||
 		(attackSkill != nil && !haveRequiredAttirbutes(state.Character.Attributes, attackSkill.Cost) && state.Character.LastDamageTaken > 2) {
 		var skill *swagger.DungeonsandtrollsSkill
 
@@ -236,10 +242,10 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 				equipSkill := equipSkill
 
 				if haveRequiredAttirbutes(state.Character.Attributes, equipSkill.Cost) &&
-					equipSkill.CasterEffects != nil &&
-					equipSkill.CasterEffects.Attributes != nil &&
-					equipSkill.CasterEffects.Attributes.Life != nil &&
-					calculateAttributesValue(state.Character.Attributes, equipSkill.CasterEffects.Attributes.Life) > 0 {
+					equipSkill.TargetEffects != nil &&
+					equipSkill.TargetEffects.Attributes != nil &&
+					equipSkill.TargetEffects.Attributes.Life != nil &&
+					calculateAttributesValue(state.Character.Attributes, equipSkill.TargetEffects.Attributes.Life) > 0 {
 
 					skill = &equipSkill
 					break
@@ -247,10 +253,11 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 			}
 		}
 		if skill != nil {
-			log.Println("Resting")
+			log.Println("Healing")
 			return &swagger.DungeonsandtrollsCommandsBatch{
 				Skill: &swagger.DungeonsandtrollsSkillUse{
-					SkillId: skill.Id,
+					SkillId:  skill.Id,
+					TargetId: state.Character.Id,
 				},
 				Yell: &swagger.DungeonsandtrollsMessage{
 					Text: "Healing.",
@@ -368,14 +375,14 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 func spendAttributePoints(state *swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsAttributes {
 	state.Character.SkillPoints -= 0.1
 	return &swagger.DungeonsandtrollsAttributes{
-		Strength:  state.Character.SkillPoints / 5,
-		Dexterity: state.Character.SkillPoints / 5,
+		Strength:  state.Character.SkillPoints / 6,
+		Dexterity: state.Character.SkillPoints / 6,
 		// Intelligence: state.Character.SkillPoints / 7,
 		// Willpower:    state.Character.SkillPoints / 7,
-		Constitution: state.Character.SkillPoints / 5,
-		SlashResist:  state.Character.SkillPoints / 5,
-		PierceResist: state.Character.SkillPoints / 5,
-		// FireResist:     state.Character.SkillPoints / 13,
+		Constitution: state.Character.SkillPoints / 6,
+		SlashResist:  state.Character.SkillPoints / 6,
+		PierceResist: state.Character.SkillPoints / 6,
+		FireResist:   state.Character.SkillPoints / 6,
 		// PoisonResist:   state.Character.SkillPoints / 13,
 		// ElectricResist: state.Character.SkillPoints / 13,
 		// Life:           state.Character.SkillPoints / 13,
@@ -395,15 +402,20 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 	var bestItems []shopItem
 	newBestItems := []shopItem{}
 
-	moneyLimit := float32(state.Character.Money) / 4
-	stamWeight := float32(0.05)
+	moneyLimit := float32(state.Character.Money) / 5
+	restWeight := float32(0.05)
+	cutoff := 500
 
 	for _, item := range shop {
-		if float32(item.Price) <= moneyLimit && haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) {
+		if float32(item.Price) <= moneyLimit {
 			maxDamage := float32(0)
 
 			for _, skill := range item.Skills {
 				if skill.DamageAmount != nil {
+					if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Mana != nil && skill.CasterEffects.Attributes.Mana.Mana < 0 {
+						continue
+					}
+
 					damage := calculateAttributesValue(&swagger.DungeonsandtrollsAttributes{
 						Strength:       1,
 						Dexterity:      1,
@@ -428,15 +440,16 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 
 			if maxDamage > 0 {
 				for _, item2 := range shop {
+					attrs := addAttributes(
+						state.Character.Attributes,
+						item.Attributes,
+						item2.Attributes,
+					)
+
 					if float32(item2.Price) <= moneyLimit &&
+						haveRequiredAttirbutes(state.Character.Attributes, item.Requirements) &&
 						haveRequiredAttirbutes(state.Character.Attributes, item2.Requirements) &&
 						*item.Slot != *item2.Slot {
-
-						attrs := addAttributes(
-							state.Character.Attributes,
-							item.Attributes,
-							item2.Attributes,
-						)
 
 						skill, value := getItemDamage(&item, attrs)
 						if skill != nil {
@@ -456,6 +469,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		}
 	}
 
+	log.Println("First pass: ", len(newBestItems))
+
 	slices.SortFunc(newBestItems, func(a, b shopItem) int {
 		if a.Value > b.Value {
 			return -1
@@ -465,7 +480,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		}
 		return 0
 	})
-	bestItems = newBestItems[:100]
+	bestItems = newBestItems[:min(len(newBestItems), cutoff)]
+	newBestItems = newBestItems[:0]
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
@@ -484,10 +500,15 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, bStam := getItemRest(&bestItem.Items[1], attrs)
 				_, cStam := getItemRest(&item, attrs)
 
+				_, aPatch := getItemPatch(&bestItem.Items[0], attrs)
+				_, bPatch := getItemPatch(&bestItem.Items[1], attrs)
+				_, cPatch := getItemPatch(&item, attrs)
+
 				if aStam > 0 || bStam > 0 || cStam > 0 {
 					skill, value := getItemDamage(&bestItem.Items[0], attrs)
 					value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-					value *= (1 + max(aStam, bStam, cStam)*stamWeight)
+					value *= (1 + max(aStam, bStam, cStam)*restWeight)
+					value *= (1 + max(aPatch, bPatch, cPatch)*restWeight)
 
 					newBestItems = append(newBestItems, shopItem{
 						Value: value,
@@ -498,6 +519,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		}
 	}
 
+	log.Println("Second pass: ", len(newBestItems))
+
 	slices.SortFunc(newBestItems, func(a, b shopItem) int {
 		if a.Value > b.Value {
 			return -1
@@ -507,7 +530,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		}
 		return 0
 	})
-	bestItems = newBestItems[:100]
+	bestItems = newBestItems[:min(len(newBestItems), cutoff)]
+	newBestItems = newBestItems[:0]
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
@@ -530,18 +554,28 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, cStam := getItemRest(&bestItem.Items[2], attrs)
 				_, dStam := getItemRest(&item, attrs)
 
-				skill, value := getItemDamage(&bestItem.Items[0], attrs)
-				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-				value *= (1 + max(aStam, bStam, cStam, dStam)*stamWeight)
-				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
+				_, aPatch := getItemPatch(&bestItem.Items[0], attrs)
+				_, bPatch := getItemPatch(&bestItem.Items[1], attrs)
+				_, cPatch := getItemPatch(&bestItem.Items[2], attrs)
+				_, dPatch := getItemPatch(&item, attrs)
 
-				newBestItems = append(newBestItems, shopItem{
-					Value: value,
-					Items: append(bestItem.Items[0:3:3], item),
-				})
+				if aPatch > 0 || bPatch > 0 || cPatch > 0 || dPatch > 0 {
+					skill, value := getItemDamage(&bestItem.Items[0], attrs)
+					value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
+					value *= (1 + max(aStam, bStam, cStam, dStam)*restWeight)
+					value *= (1 + max(aPatch, bPatch, cPatch, dPatch)*restWeight)
+					value *= (1 + item.Attributes.SlashResist*0.2) * (1 + item.Attributes.PierceResist*1.5) * (1 + item.Attributes.FireResist*2)
+
+					newBestItems = append(newBestItems, shopItem{
+						Value: value,
+						Items: append(bestItem.Items[0:3:3], item),
+					})
+				}
 			}
 		}
 	}
+
+	log.Println("Third pass: ", len(newBestItems))
 
 	slices.SortFunc(newBestItems, func(a, b shopItem) int {
 		if a.Value > b.Value {
@@ -552,7 +586,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		}
 		return 0
 	})
-	bestItems = newBestItems[:100]
+	bestItems = newBestItems[:min(len(newBestItems), cutoff)]
+	newBestItems = newBestItems[:0]
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
@@ -578,11 +613,18 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, dStam := getItemRest(&bestItem.Items[3], attrs)
 				_, eStam := getItemRest(&item, attrs)
 
+				_, aPatch := getItemPatch(&bestItem.Items[0], attrs)
+				_, bPatch := getItemPatch(&bestItem.Items[1], attrs)
+				_, cPatch := getItemPatch(&bestItem.Items[2], attrs)
+				_, dPatch := getItemPatch(&bestItem.Items[3], attrs)
+				_, ePatch := getItemPatch(&item, attrs)
+
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*stamWeight)
-				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
-				value *= (1 + item.Attributes.SlashResist) * (1 + item.Attributes.PierceResist*1.5)
+				value *= (1 + max(aStam, bStam, cStam, dStam, eStam)*restWeight)
+				value *= (1 + max(aPatch, bPatch, cPatch, dPatch, ePatch)*restWeight)
+				value *= (1 + bestItem.Items[3].Attributes.SlashResist*0.2) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5) * (1 + bestItem.Items[3].Attributes.FireResist*2)
+				value *= (1 + item.Attributes.SlashResist*0.2) * (1 + item.Attributes.PierceResist*1.5) * (1 + item.Attributes.FireResist*2)
 
 				newBestItems = append(newBestItems, shopItem{
 					Value: value,
@@ -591,6 +633,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 			}
 		}
 	}
+
+	log.Println("Fourth pass: ", len(newBestItems))
 
 	slices.SortFunc(newBestItems, func(a, b shopItem) int {
 		if a.Value > b.Value {
@@ -601,7 +645,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		}
 		return 0
 	})
-	bestItems = newBestItems[:100]
+	bestItems = newBestItems[:min(len(newBestItems), cutoff)]
+	newBestItems = newBestItems[:0]
 
 	for _, bestItem := range bestItems {
 		for _, item := range shop {
@@ -630,11 +675,19 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 				_, eStam := getItemRest(&bestItem.Items[4], attrs)
 				_, fStam := getItemRest(&item, attrs)
 
+				_, aPatch := getItemPatch(&bestItem.Items[0], attrs)
+				_, bPatch := getItemPatch(&bestItem.Items[1], attrs)
+				_, cPatch := getItemPatch(&bestItem.Items[2], attrs)
+				_, dPatch := getItemPatch(&bestItem.Items[3], attrs)
+				_, ePatch := getItemPatch(&bestItem.Items[4], attrs)
+				_, fPatch := getItemPatch(&item, attrs)
+
 				skill, value := getItemDamage(&bestItem.Items[0], attrs)
 				value *= float32(math.Trunc(float64(calculateAttributesValue(attrs, skill.Range_))))
-				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*stamWeight)
-				value *= (1 + bestItem.Items[3].Attributes.SlashResist) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5)
-				value *= (1 + bestItem.Items[4].Attributes.SlashResist) * (1 + bestItem.Items[4].Attributes.PierceResist*1.5)
+				value *= (1 + max(aStam, bStam, cStam, dStam, eStam, fStam)*restWeight)
+				value *= (1 + max(aPatch, bPatch, cPatch, dPatch, ePatch, fPatch)*restWeight)
+				value *= (1 + bestItem.Items[3].Attributes.SlashResist*0.2) * (1 + bestItem.Items[3].Attributes.PierceResist*1.5) * (1 + bestItem.Items[3].Attributes.FireResist*2)
+				value *= (1 + bestItem.Items[4].Attributes.SlashResist*0.2) * (1 + bestItem.Items[4].Attributes.PierceResist*1.5) * (1 + bestItem.Items[4].Attributes.FireResist*2)
 
 				newBestItems = append(newBestItems, shopItem{
 					Value: value,
@@ -643,6 +696,8 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 			}
 		}
 	}
+
+	log.Println("Fifth pass: ", len(newBestItems))
 
 	slices.SortFunc(newBestItems, func(a, b shopItem) int {
 		if a.Value > b.Value {
@@ -654,6 +709,7 @@ func shop(state *swagger.DungeonsandtrollsGameState) []swagger.Dungeonsandtrolls
 		return 0
 	})
 	bestItems = newBestItems
+	// newBestItems = newBestItems[:0]
 
 	for _, setup := range bestItems {
 		totalPrice := 0
@@ -748,6 +804,9 @@ func getItemDamage(item *swagger.DungeonsandtrollsItem, attrs *swagger.Dungeonsa
 
 	for _, skill := range item.Skills {
 		skill := skill
+		if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Mana != nil && skill.CasterEffects.Attributes.Mana.Mana < 0 {
+			continue
+		}
 
 		if *skill.Target == swagger.CHARACTER_SkillTarget && skill.DamageAmount != nil {
 			value := calculateAttributesValue(skill.DamageAmount, attrs)
@@ -768,8 +827,27 @@ func getItemRest(item *swagger.DungeonsandtrollsItem, attrs *swagger.Dungeonsand
 	for _, skill := range item.Skills {
 		skill := skill
 
-		if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Stamina != nil {
-			value := calculateAttributesValue(skill.CasterEffects.Attributes.Stamina, attrs)
+		if skill.CasterEffects != nil && skill.CasterEffects.Attributes != nil && skill.CasterEffects.Attributes.Stamina != nil && skill.CasterEffects.Attributes.Mana != nil {
+			value := calculateAttributesValue(skill.CasterEffects.Attributes.Stamina, attrs) * calculateAttributesValue(skill.CasterEffects.Attributes.Mana, attrs)
+			if value > bestValue {
+				bestValue = value
+				best = &skill
+			}
+		}
+	}
+
+	return best, bestValue
+}
+
+func getItemPatch(item *swagger.DungeonsandtrollsItem, attrs *swagger.DungeonsandtrollsAttributes) (*swagger.DungeonsandtrollsSkill, float32) {
+	var best *swagger.DungeonsandtrollsSkill
+	bestValue := float32(0)
+
+	for _, skill := range item.Skills {
+		skill := skill
+
+		if skill.TargetEffects != nil && skill.TargetEffects.Attributes != nil && skill.TargetEffects.Attributes.Life != nil {
+			value := calculateAttributesValue(skill.TargetEffects.Attributes.Life, attrs)
 			if value > bestValue {
 				bestValue = value
 				best = &skill
