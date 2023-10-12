@@ -232,13 +232,13 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 					SkillId: skill.Id,
 				},
 				Yell: &swagger.DungeonsandtrollsMessage{
-					Text: "Ooohhmmmmmmmmmm.",
+					Text: "Resting.",
 				},
 			}
 		}
 	}
 
-	if state.Character.Attributes.Life < state.Character.MaxAttributes.Life && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 3) {
+	if state.Character.Attributes.Life < state.Character.MaxAttributes.Life && state.Character.LastDamageTaken > 2 && (monster == nil || distance(*state.CurrentPosition, *monster.Position) > 6) {
 		var skill *swagger.DungeonsandtrollsSkill
 
 		for _, equip := range state.Character.Equip {
@@ -264,7 +264,7 @@ func run(state swagger.DungeonsandtrollsGameState) *swagger.DungeonsandtrollsCom
 					TargetId: state.Character.Id,
 				},
 				Yell: &swagger.DungeonsandtrollsMessage{
-					Text: "Cover me, I'm healing!",
+					Text: "Healing.",
 				},
 			}
 		}
